@@ -34,10 +34,11 @@ filter_columns = [
     "해외본사"
 ]
 
-filters = {}
-for col in filter_columns:
-    if col in data.columns:
-        filters[col] = st.multiselect(col, sorted(data[col].astype(str).unique()))
+filters[col] = st.multiselect(
+    col,
+    options := ["전체"] + sorted(data[col].astype(str).unique()),
+    default=None
+)
 
 filtered_data = data.copy()
 for column, selected in filters.items():
@@ -58,23 +59,40 @@ st.download_button(
 
 st.markdown("### 📈 월별 광고주별 광고 수")
 
-if "조사월" in filters and filters["조사월"]:
-    selected_months = filters["조사월"]
-    monthly_advertisers = data[data["조사월"].astype(str).isin(selected_months)]
-    grouped = monthly_advertisers.groupby(["조사월", "광고주(연락처)"]).size().reset_index(name="건수")
-    st.dataframe(grouped.sort_values(by=["조사월", "건수"], ascending=[True, False]), use_container_width=True)
-else:
-    st.info("제일 위 '조사월'을 선택하시면 월별 광고주 통계를 볼 수 있어요.")
+# 조사월과 업종 필터 반영
+selected_months = filters.get("조사월", [])
+selected_categories = filters.get("업종", [])
+
+# 원본 데이터 복사
+target_data = data.copy()
+
+# 조사월 필터링
+if selected_months and "전체" not in selected_months:
+    target_data = target_data[target_data["조사월"].astype(str).isin(selected_months)]
+
+# 업종 필터링
+if selected_categories and "전체" not in selected_categories:
+    target_data = target_data[target_data["업종"].astype(str).isin(selected_categories)]
+
+# 그룹화 및 출력
+monthly_advertisers = target_data.groupby(["조사월", "광고주(연락처)"]).size().reset_index(name="건수")
+st.dataframe(monthly_advertisers.sort_values(by=["조사월", "건수"], ascending=[True, False]), use_container_width=True)
 
 st.markdown("### 🌍 월별 해외본사 광고 수")
 
-if "조사월" in filters and filters["조사월"]:
-    selected_months = filters["조사월"]
-    monthly_brands = data[data["조사월"].astype(str).isin(selected_months)]
-    grouped = monthly_brands.groupby(["조사월", "해외본사"]).size().reset_index(name="건수")
-    st.dataframe(grouped.sort_values(by=["조사월", "건수"], ascending=[True, False]), use_container_width=True)
-else:
-    st.info("제일 위 '조사월'을 선택하시면 월별 해외본사 통계를 볼 수 있어요.")
+# 같은 필터 사용
+filtered_for_brands = data.copy()
+
+if selected_months and "전체" not in selected_months:
+    filtered_for_brands = filtered_for_brands[filtered_for_brands["조사월"].astype(str).isin(selected_months)]
+
+if selected_categories and "전체" not in selected_categories:
+    filtered_for_brands = filtered_for_brands[filtered_for_brands["업종"].astype(str).isin(selected_categories)]
+
+# 그룹화 및 출력
+monthly_brands = filtered_for_brands.groupby(["조사월", "해외본사"]).size().reset_index(name="건수")
+st.dataframe(monthly_brands.sort_values(by=["조사월", "건수"], ascending=[True, False]), use_container_width=True)
+
 
 # ✅ 원본 시트 링크
 st.markdown("""🔗 [Google Sheet에서 직접 보기](https://docs.google.com/spreadsheets/d/1AFotC96rl9nz1m2BDgn2mGSm3Jo69-mcGWAquYvWEwE/edit)""")
