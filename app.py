@@ -2,65 +2,44 @@ import streamlit as st
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import json
 
-# 앱 시작 확인 메시지
 st.write("✅ 앱이 시작되었습니다")
 
-# Google Sheets 인증
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-client = gspread.authorize(creds)
+# ✅ Step 1: Streamlit Cloud의 secrets.toml에서 서비스 계정 정보 불러오기
+creds_dict = st.secrets["google"]
+creds_json = json.dumps(creds_dict)
 
-# 시트 불러오기
-spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1AFotC96rl9nz1m2BDgn2mGSm3Jo69-mcGWAquYvWEwE/edit")
-worksheet = spreadsheet.worksheet("2025")
+# ✅ Step 2: Credentials 객체 생성
+creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(creds_json))
 
-# 시트 데이터를 DataFrame으로 변환
-data = pd.DataFrame(worksheet.get_all_records())
+# ✅ Step 3: gspread 인증
+gc = gspread.authorize(creds)
 
-st.title("📊 서울 주요 전광판 광고 현황 필터 앱")
+# ✅ Step 4: 구글 시트 열기 (아래 URL을 사용자의 구글시트 URL로 교체하세요)
+spreadsheet_url = "https://docs.google.com/spreadsheets/d/시트ID/edit#gid=0"
+worksheet_name = "광고판정보"  # 시트 탭 이름에 맞춰 수정
 
-# 자동 필터 생성
-filters = {
-    "조사월": st.multiselect("조사월", sorted(data["조사월"].astype(str).unique())),
-    "빌딩&전광판": st.multiselect("광고판명", sorted(data["빌딩&전광판"].unique())),
-    "광고주": st.multiselect("광고주", sorted(data["광고주"].unique())),
-    "제품명": st.multiselect("제품명", sorted(data["제품명"].unique())),
-    "업종": st.multiselect("업종", sorted(data["업종"].unique())),
-    "브랜드": st.multiselect("브랜드", sorted(data["브랜드"].unique())),
-    "해외본사": st.multiselect("해외본사", sorted(data["해외본사"].unique())),
-    "소재지": st.multiselect("소재지", sorted(data["소재지"].unique())),
-    "매체사": st.multiselect("매체사", sorted(data["매체사"].unique()))
-}
+sh = gc.open_by_url(spreadsheet_url)
+worksheet = sh.worksheet(worksheet_name)
 
-# 필터 적용
-filtered_data = data.copy()
-for column, selected in filters.items():
-    if selected:
-        filtered_data = filtered_data[filtered_data[column].astype(str).isin(selected)]
+# ✅ Step 5: 데이터 불러오기
+data = worksheet.get_all_records()
+df = pd.DataFrame(data)
 
-st.markdown("### 📌 필터 결과")
-st.dataframe(filtered_data, use_container_width=True)
+# ✅ Step 6: 자동 필터 UI
+st.title("📊 서울 광고판 필터")
+region = st.selectbox("지역을 선택하세요", ["전체"] + sorted(df["지역"].unique()))
+month = st.selectbox("조사월을 선택하세요", ["전체"] + sorted(df["조사월"].unique()))
+ad_type = st.selectbox("광고판 구분", ["전체"] + sorted(df["광고판구분"].unique()))
 
-# CSV 다운로드 기능
-csv = filtered_data.to_csv(index=False).encode('utf-8-sig')
-st.download_button(
-    label="📥 결과 CSV 다운로드",
-    data=csv,
-    file_name='filtered_data.csv',
-    mime='text/csv'
-)
+filtered_df = df.copy()
+if region != "전체":
+    filtered_df = filtered_df[filtered_df["지역"] == region]
+if month != "전체":
+    filtered_df = filtered_df[filtered_df["조사월"] == month]
+if ad_type != "전체":
+    filtered_df = filtered_df[filtered_df["광고판구분"] == ad_type]
 
-# 통계 분석
-st.markdown("### 📈 월별 광고주별 광고 수")
-monthly_advertisers = data.groupby(["조사월", "광고주"]).size().reset_index(name="건수")
-st.dataframe(monthly_advertisers.sort_values(by=["조사월", "건수"], ascending=[True, False]), use_container_width=True)
-
-st.markdown("### 🌍 월별 글로벌 브랜드 광고 수")
-monthly_brands = data.groupby(["조사월", "해외본사"]).size().reset_index(name="건수")
-st.dataframe(monthly_brands.sort_values(by=["조사월", "건수"], ascending=[True, False]), use_container_width=True)
-
-# 구글시트 바로가기
-st.markdown("""
-🔗 [Google Sheet에서 직접 보기](https://docs.google.com/spreadsheets/d/1AFotC96rl9nz1m2BDgn2mGSm3Jo69-mcGWAquYvWEwE/edit)
-""")
+st.write(f"🔍 총 {len(filtered_df)}건이 조회되었습니다.")
+st.dataframe(filtered_df)
