@@ -1,4 +1,5 @@
 import streamlit as st
+
 st.write("✅ 앱이 시작되었습니다")
 
 import streamlit as st
