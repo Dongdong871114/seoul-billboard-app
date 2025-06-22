@@ -64,7 +64,7 @@ if "조사월" in filters and filters["조사월"]:
     grouped = monthly_advertisers.groupby(["조사월", "광고주(연락처)"]).size().reset_index(name="건수")
     st.dataframe(grouped.sort_values(by=["조사월", "건수"], ascending=[True, False]), use_container_width=True)
 else:
-    st.info("먼저 왼쪽에서 '조사월'을 선택하시면 월별 광고주 통계를 볼 수 있어요.")
+    st.info("제일 위 '조사월'을 선택하시면 월별 광고주 통계를 볼 수 있어요.")
 
 st.markdown("### 🌍 월별 해외본사 광고 수")
 
@@ -74,7 +74,7 @@ if "조사월" in filters and filters["조사월"]:
     grouped = monthly_brands.groupby(["조사월", "해외본사"]).size().reset_index(name="건수")
     st.dataframe(grouped.sort_values(by=["조사월", "건수"], ascending=[True, False]), use_container_width=True)
 else:
-    st.info("먼저 왼쪽에서 '조사월'을 선택하시면 월별 해외본사 통계를 볼 수 있어요.")
+    st.info("제일 위 '조사월'을 선택하시면 월별 해외본사 통계를 볼 수 있어요.")
 
 # ✅ 원본 시트 링크
 st.markdown("""🔗 [Google Sheet에서 직접 보기](https://docs.google.com/spreadsheets/d/1AFotC96rl9nz1m2BDgn2mGSm3Jo69-mcGWAquYvWEwE/edit)""")
