@@ -15,10 +15,10 @@ client = gspread.authorize(creds)
 
 # ✅ 구글시트에서 데이터 로드
 spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1AFotC96rl9nz1m2BDgn2mGSm3Jo69-mcGWAquYvWEwE/edit")
-worksheet = spreadsheet.worksheet("2025")  # 시트명 정확히 '2025'
+worksheet = spreadsheet.worksheet("DATA")  # 시트명 정확히 'DATA'
 data = pd.DataFrame(worksheet.get_all_records())
 
-st.title("📊 서울 주요 전광판 광고 현황 필터 앱")
+st.title("🎉서울 DOOH 광고주 조사🎉")
 
 # ✅ 필터 항목 정의
 filter_columns = [
