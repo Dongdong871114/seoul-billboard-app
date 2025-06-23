@@ -18,7 +18,7 @@ spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1AFotC9
 worksheet = spreadsheet.worksheet("DATA")  # 시트명 정확히 'DATA'
 data = pd.DataFrame(worksheet.get_all_records())
 
-st.title("🎉서울 DOOH 광고주 조사🎉")
+st.title("🎉서울 주요 전광판 광고주 조사🎉")
 
 # ✅ 필터 항목 정의
 filter_columns = [
