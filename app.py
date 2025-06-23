@@ -10,8 +10,7 @@ st.write("✅ 앱이 시작되었습니다")
 # ✅ Streamlit secrets 인증 방식
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds_dict = st.secrets["google"]
-creds_json = json.dumps({k: v for k, v in creds_dict.items()})
-creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(creds_json), scope)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(creds_dict), scope)
 client = gspread.authorize(creds)
 
 # ✅ 구글시트에서 데이터 로드
