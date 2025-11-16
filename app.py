@@ -348,14 +348,15 @@ else:
     st.info("분석할 조사월을 하나 이상 선택하면 K-VISION & KT스퀘어 단독 광고 목록이 표시됩니다.")
 
 ###############################################################################
-# 🟥 신규 기능 2: 강남권 vs 강북권 업종/광고주 TOP20 비교 (공익 제외, 월별 필터)
+# 🟥 신규 기능 2: 강남권 vs 강북권 업종/광고주 TOP20 비교 (공익 제외, 월 복수 선택)
 ###############################################################################
 st.markdown("## 🟥 강남권 vs 강북권 비교 분석 (공익 제외)")
 
-# 🔸 월별 필터 추가 (전체 or 특정 조사월)
-region_month = st.selectbox(
-    "강남권 vs 강북권 비교에 사용할 조사월 선택",
-    ["전체"] + month_options
+# 🔸 월 복수 선택 (아무 것도 선택 안 하면 = 전체 기간)
+region_months = st.multiselect(
+    "강남권 vs 강북권 비교에 사용할 조사월 선택 (선택 안 하면 전체 기간 기준)",
+    month_options,
+    default=[],
 )
 
 region_df = data.copy()
@@ -363,8 +364,9 @@ region_df["권역"] = region_df.apply(classify_region, axis=1)
 region_df = region_df[region_df["권역"].isin(["강남권", "강북권"])]
 region_df = region_df[region_df["업종"].astype(str).str.strip() != "공익"]
 
-if region_month != "전체":
-    region_df = region_df[region_df["조사월"].astype(str) == region_month]
+# 선택된 월이 있으면 그 월들만 필터, 아니면 전체 기간
+if region_months:
+    region_df = region_df[region_df["조사월"].astype(str).isin(region_months)]
 
 # 🔹 업종 TOP20 (강남/강북)
 gn_inds = (
@@ -395,10 +397,10 @@ ind_table = pd.DataFrame({
     "강북권 건수": gb_inds["강북권 건수"],
 })
 
-if region_month == "전체":
+if not region_months:
     title_suffix = " (전체 기간 기준)"
 else:
-    title_suffix = f" ({region_month} 기준)"
+    title_suffix = " (" + ", ".join(region_months) + " 기준)"
 
 st.markdown("### 🔵 업종 TOP20 비교" + title_suffix)
 st.dataframe(ind_table, use_container_width=True)
