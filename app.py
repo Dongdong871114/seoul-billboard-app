@@ -243,15 +243,15 @@ st.dataframe(
 )
 
 ###############################################################################
-# 🟦 신규 기능 1: K-VISION & KT스퀘어 단독 광고 분석 (룩스 제외 · 공익 제외)
+# 🟦 신규 기능 1: K-VISION & KT스퀘어 단독 광고 + 동일 기간 룩스 광고 분석
 ###############################################################################
 st.markdown("## 🟦 K-VISION & KT스퀘어 단독 광고 분석 (룩스 제외 · 공익 제외)")
 st.write(
     "선택한 조사월 범위에서 **공익 광고를 제외하고**, "
     "**코리아나호텔(K-VISION)**과 **KT스퀘어** 전광판에만 등장하며 "
     "**룩스에는 등장하지 않은 광고주**를 표로 나열합니다. "
-    "추가로, 해당 광고주가 과거 **일민미술관**에 광고한 적이 있다면 그 조사월을 표시하고, "
-    "해당 광고가 **K-VISION인지 / KT스퀘어인지 / 둘 다인지**도 함께 보여줍니다."
+    "추가로, 해당 광고주가 과거 **일민미술관·룩스**에 광고한 적이 있다면 그 조사월을 표시하고, "
+    "동일 기간 기준으로 **룩스 광고주가 K-VISION / KT스퀘어와 어떤 조합으로 집행되었는지**도 별도 표로 보여줍니다."
 )
 
 multi_months = st.multiselect(
@@ -262,22 +262,27 @@ multi_months = st.multiselect(
 
 if multi_months:
     base = data.copy()
+
+    # 1) 선택 월 + 광화문만 + 공익 제외
     subset = base[
         (base["조사월"].astype(str).isin(multi_months)) &
         (base["위치"] == "광화문") &
         (~base["업종"].astype(str).str.contains("공익", na=False))
     ]
 
+    # 2) K-VISION / KT스퀘어 / 룩스 분리
     kvkt = subset[subset["빌딩&전광판"].isin(["코리아나호텔(K-VISION)", "KT스퀘어"])]
     lux = subset[subset["빌딩&전광판"] == "룩스"]
 
     kvkt_adv = kvkt["광고주(연락처)"].astype(str)
     lux_adv = lux["광고주(연락처)"].astype(str).unique()
 
-    # 룩스에 없는 광고주만 필터
+    # ─────────────────────────────────────────────
+    # ① K-VISION & KT스퀘어 단독 광고주 (선택 기간 내 룩스 X)
+    # ─────────────────────────────────────────────
     unique_kvkt = kvkt[~kvkt_adv.isin(lux_adv)].copy()
 
-    # 광고주 단위로 기본 정보 집계
+    # 광고주 단위 기본 정보
     grouped = (
         unique_kvkt
         .groupby("광고주(연락처)")
@@ -288,7 +293,7 @@ if multi_months:
         .reset_index()
     )
 
-    # 🔹 (1) 전광판 종류(K-VISION / KT스퀘어 / 둘 다) 계산
+    # 전광판 구분 (K-VISION / KT스퀘어 / 둘 다)
     boards_per_adv = (
         unique_kvkt
         .groupby("광고주(연락처)")["빌딩&전광판"]
@@ -311,13 +316,14 @@ if multi_months:
     boards_per_adv["전광판 구분"] = boards_per_adv["빌딩&전광판"].apply(label_board)
     boards_per_adv = boards_per_adv[["광고주(연락처)", "전광판 구분"]]
 
-    # 🔹 (2) 국적 & 일민미술관 광고월 계산
+    # 국적 & 일민미술관 광고월 & 룩스 광고월 계산 (전체 base 기준)
     ilmin_rows = []
     for idx, row in grouped.iterrows():
         adv = str(row["광고주(연락처)"])
         foreign_hq = str(row.get("해외본사", "") or "")
         nationality = "해외" if foreign_hq.strip() != "" else "국내"
 
+        # 일민미술관 과거 광고월 (전체 기간)
         ilmin = base[
             (base["빌딩&전광판"] == "일민미술관") &
             (base["광고주(연락처)"].astype(str) == adv)
@@ -325,15 +331,25 @@ if multi_months:
         months_ilmin = sorted(ilmin["조사월"].astype(str).unique())
         ilmin_months_str = ", ".join(months_ilmin) if months_ilmin else ""
 
-        ilmin_rows.append((adv, nationality, ilmin_months_str))
+        # 룩스 과거 광고월 (전체 기간) — 선택 기간에는 없지만 다른 달엔 있을 수 있음
+        lux_hist = base[
+            (base["빌딩&전광판"] == "룩스") &
+            (base["광고주(연락처)"].astype(str) == adv)
+        ]
+        months_lux = sorted(lux_hist["조사월"].astype(str).unique())
+        lux_months_str = ", ".join(months_lux) if months_lux else ""
 
-    ilmin_df = pd.DataFrame(ilmin_rows, columns=["광고주(연락처)", "국적", "일민미술관 광고월"])
+        ilmin_rows.append((adv, nationality, ilmin_months_str, lux_months_str))
 
-    # 🔹 (3) 모든 정보 merge
+    ilmin_df = pd.DataFrame(
+        ilmin_rows,
+        columns=["광고주(연락처)", "국적", "일민미술관 광고월", "룩스 광고월"]
+    )
+
+    # 최종 merge
     grouped = grouped.merge(boards_per_adv, on="광고주(연락처)", how="left")
     grouped = grouped.merge(ilmin_df, on="광고주(연락처)", how="left")
 
-    # 컬럼 순서 정리
     grouped = grouped[[
         "광고주(연락처)",
         "제품&브랜드",
@@ -341,11 +357,106 @@ if multi_months:
         "국적",
         "전광판 구분",
         "일민미술관 광고월",
+        "룩스 광고월",
     ]]
 
+    st.markdown("### 1) K-VISION & KT스퀘어 단독 광고주 (선택 기간 내 룩스 없음)")
     st.dataframe(grouped, use_container_width=True)
+
+    # ─────────────────────────────────────────────
+    # ② 동일 기간 기준 룩스 광고주 + K-VISION/KT스퀘어 조합 분석
+    # ─────────────────────────────────────────────
+    st.markdown("### 2) 동일 기간 룩스 광고주 (K-VISION / KT스퀘어 조합 포함)")
+
+    # 룩스에 한 번이라도 나온 광고주들 (선택 기간 내)
+    lux_adv_unique = lux["광고주(연락처)"].astype(str).unique()
+
+    # 그 광고주들이 룩스 / K-VISION / KT스퀘어에서 집행한 모든 행 (선택 기간 내)
+    lux_combo_base = subset[
+        subset["광고주(연락처)"].astype(str).isin(lux_adv_unique) &
+        subset["빌딩&전광판"].isin(["룩스", "코리아나호텔(K-VISION)", "KT스퀘어"])
+    ].copy()
+
+    if lux_combo_base.empty:
+        st.info("선택한 기간 동안 룩스 광고주 데이터가 없습니다.")
+    else:
+        # 기본 정보 (광고주 단위, 선택 기간 기준)
+        lux_grouped = (
+            lux_combo_base
+            .groupby("광고주(연락처)")
+            .agg({
+                "제품&브랜드": "first",
+                "해외본사": "first"
+            })
+            .reset_index()
+        )
+
+        # 전광판 조합 계산 (룩스 단독 / 룩스+K-VISION / 룩스+KT스퀘어 / 룩스+K-VISION+KT스퀘어)
+        boards_per_adv2 = (
+            lux_combo_base
+            .groupby("광고주(연락처)")["빌딩&전광판"]
+            .unique()
+            .reset_index()
+        )
+
+        def label_lux_combo(arr):
+            s = set(arr)
+            has_lux = "룩스" in s
+            has_kv = "코리아나호텔(K-VISION)" in s
+            has_kt = "KT스퀘어" in s
+
+            if has_lux and not has_kv and not has_kt:
+                return "룩스 단독"
+            if has_lux and has_kv and not has_kt:
+                return "룩스 + K-VISION"
+            if has_lux and not has_kv and has_kt:
+                return "룩스 + KT스퀘어"
+            if has_lux and has_kv and has_kt:
+                return "룩스 + K-VISION + KT스퀘어"
+            # 혹시 모를 예외
+            return "기타"
+
+        boards_per_adv2["전광판 조합"] = boards_per_adv2["빌딩&전광판"].apply(label_lux_combo)
+        boards_per_adv2 = boards_per_adv2[["광고주(연락처)", "전광판 조합"]]
+
+        # 국적 & 룩스 광고월 (전체 기간 기준으로도 보관해두고 싶으면 여기서 base 써도 됨)
+        lux_rows = []
+        for idx, row in lux_grouped.iterrows():
+            adv = str(row["광고주(연락처)"])
+            foreign_hq = str(row.get("해외본사", "") or "")
+            nationality = "해외" if foreign_hq.strip() != "" else "국내"
+
+            # 선택 기간 내 룩스 광고월
+            lux_only = subset[
+                (subset["빌딩&전광판"] == "룩스") &
+                (subset["광고주(연락처)"].astype(str) == adv)
+            ]
+            months_lux = sorted(lux_only["조사월"].astype(str).unique())
+            lux_months_str = ", ".join(months_lux) if months_lux else ""
+
+            lux_rows.append((adv, nationality, lux_months_str))
+
+        lux_info_df = pd.DataFrame(
+            lux_rows,
+            columns=["광고주(연락처)", "국적", "룩스 광고월"]
+        )
+
+        # 최종 merge
+        lux_grouped = lux_grouped.merge(boards_per_adv2, on="광고주(연락처)", how="left")
+        lux_grouped = lux_grouped.merge(lux_info_df, on="광고주(연락처)", how="left")
+
+        lux_grouped = lux_grouped[[
+            "광고주(연락처)",
+            "제품&브랜드",
+            "해외본사",
+            "국적",
+            "전광판 조합",
+            "룩스 광고월",
+        ]]
+
+        st.dataframe(lux_grouped, use_container_width=True)
 else:
-    st.info("분석할 조사월을 하나 이상 선택하면 K-VISION & KT스퀘어 단독 광고 목록이 표시됩니다.")
+    st.info("분석할 조사월을 하나 이상 선택하면 K-VISION & KT스퀘어 / 룩스 조합 분석 결과가 표시됩니다.")
 
 ###############################################################################
 # 🟥 신규 기능 2: 강남권 vs 강북권 업종/광고주 TOP20 비교 (공익 제외, 월 복수 선택)
