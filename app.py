@@ -458,124 +458,134 @@ if multi_months:
 else:
     st.info("분석할 조사월을 하나 이상 선택하면 K-VISION & KT스퀘어 / 룩스 조합 분석 결과가 표시됩니다.")
 
-###############################################################################
-# 🟥 신규 기능 2: 강남권 vs 강북권 업종/광고주 TOP20 비교 (공익 제외, 월 복수 선택)
-###############################################################################
-st.markdown("## 🟥 강남권 vs 강북권 비교 분석 (공익 제외)")
-
-# 🔸 월 복수 선택 (아무 것도 선택 안 하면 = 전체 기간)
-region_months = st.multiselect(
-    "강남권 vs 강북권 비교에 사용할 조사월 선택 (선택 안 하면 전체 기간 기준)",
-    month_options,
-    default=[],
+# -------------------------------------------------------------------------
+# 🔹 업종별 강남/강북 건수 + 비중(%)
+# -------------------------------------------------------------------------
+ind_counts = (
+    region_df
+    .groupby(["업종", "권역"])
+    .size()
+    .reset_index(name="건수")
 )
 
-region_df = data.copy()
-region_df["권역"] = region_df.apply(classify_region, axis=1)
-region_df = region_df[region_df["권역"].isin(["강남권", "강북권"])]
-region_df = region_df[region_df["업종"].astype(str).str.strip() != "공익"]
+ind_pivot = (
+    ind_counts
+    .pivot(index="업종", columns="권역", values="건수")
+    .fillna(0)
+)
 
-# 선택된 월이 있으면 그 월들만 필터, 아니면 전체 기간
-if region_months:
-    region_df = region_df[region_df["조사월"].astype(str).isin(region_months)]
+for col in ["강남권", "강북권"]:
+    if col not in ind_pivot.columns:
+        ind_pivot[col] = 0
 
-# 🔹 업종 TOP20 (강남/강북)
-gn_inds = (
-    region_df[region_df["권역"] == "강남권"]["업종"]
-    .value_counts()
+ind_pivot["총 건수"] = ind_pivot["강남권"] + ind_pivot["강북권"]
+ind_pivot["강남권 비중(%)"] = (ind_pivot["강남권"] / ind_pivot["총 건수"].replace(0, 1) * 100).round(1)
+ind_pivot["강북권 비중(%)"] = (ind_pivot["강북권"] / ind_pivot["총 건수"].replace(0, 1) * 100).round(1)
+
+# ▶ 강남 기준 정렬
+gn_sorted = (
+    ind_pivot
+    .sort_values("강남권 비중(%)", ascending=False)
     .reset_index()
-    .head(20)
 )
-gn_inds.columns = ["강남권 업종", "강남권 건수"]
+gn_sorted.insert(0, "강남 순위", range(1, len(gn_sorted) + 1))
 
-gb_inds = (
-    region_df[region_df["권역"] == "강북권"]["업종"]
-    .value_counts()
+# ▶ 강북 기준 정렬
+gb_sorted = (
+    ind_pivot
+    .sort_values("강북권 비중(%)", ascending=False)
     .reset_index()
-    .head(20)
 )
-gb_inds.columns = ["강북권 업종", "강북권 건수"]
+gb_sorted.insert(0, "강북 순위", range(1, len(gb_sorted) + 1))
 
-max_len_ind = max(len(gn_inds), len(gb_inds))
-gn_inds = gn_inds.reindex(range(max_len_ind))
-gb_inds = gb_inds.reindex(range(max_len_ind))
+max_len_ind = max(len(gn_sorted), len(gb_sorted))
+gn_sorted = gn_sorted.reindex(range(max_len_ind))
+gb_sorted = gb_sorted.reindex(range(max_len_ind))
 
-ind_table = pd.DataFrame({
-    "순위": list(range(1, max_len_ind + 1)),
-    "강남권 업종": gn_inds["강남권 업종"],
-    "강남권 건수": gn_inds["강남권 건수"],
-    "강북권 업종": gb_inds["강북권 업종"],
-    "강북권 건수": gb_inds["강북권 건수"],
+ind_table_dual = pd.DataFrame({
+    "강남 순위": gn_sorted["강남 순위"],
+    "강남 업종": gn_sorted["업종"],
+    "강남 건수": gn_sorted["강남권"],
+    "강남 비중(%)": gn_sorted["강남권 비중(%)"],
+    "강북 순위": gb_sorted["강북 순위"],
+    "강북 업종": gb_sorted["업종"],
+    "강북 건수": gb_sorted["강북권"],
+    "강북 비중(%)": gb_sorted["강북권 비중(%)"],
 })
 
-if not region_months:
-    title_suffix = " (전체 기간 기준)"
-else:
-    title_suffix = " (" + ", ".join(region_months) + " 기준)"
+st.markdown("### 🔵 업종 분포 (강남/강북 비중 기준 정렬)" + title_suffix)
+st.dataframe(ind_table_dual, use_container_width=True)
 
-st.markdown("### 🔵 업종 TOP20 비교" + title_suffix)
-st.dataframe(ind_table, use_container_width=True)
-
-# 🔹 광고주 TOP20 (강남/강북)
-gn_adv = (
-    region_df[region_df["권역"] == "강남권"]["광고주(연락처)"]
-    .value_counts()
-    .reset_index()
-    .head(20)
+# -------------------------------------------------------------------------
+# 🔹 광고주별 강남/강북 건수 + 비중(%) + 국적
+# -------------------------------------------------------------------------
+adv_counts = (
+    region_df
+    .groupby(["광고주(연락처)", "권역"])
+    .size()
+    .reset_index(name="건수")
 )
-gn_adv.columns = ["강남권 광고주", "강남권 건수"]
 
-gb_adv = (
-    region_df[region_df["권역"] == "강북권"]["광고주(연락처)"]
-    .value_counts()
-    .reset_index()
-    .head(20)
+adv_pivot = (
+    adv_counts
+    .pivot(index="광고주(연락처)", columns="권역", values="건수")
+    .fillna(0)
 )
-gb_adv.columns = ["강북권 광고주", "강북권 건수"]
 
-# 국적 붙이기
-gn_nat = []
-for adv in gn_adv["강남권 광고주"].dropna():
-    sub = region_df[
-        (region_df["권역"] == "강남권") &
-        (region_df["광고주(연락처)"].astype(str) == str(adv))
-    ]
-    has_foreign = (
-        sub["해외본사"].notna().any()
-        and (sub["해외본사"].astype(str).str.strip() != "").any()
-    )
-    gn_nat.append("해외" if has_foreign else "국내")
-gn_adv["강남권 국적"] = gn_nat + [""] * (len(gn_adv) - len(gn_nat))
+for col in ["강남권", "강북권"]:
+    if col not in adv_pivot.columns:
+        adv_pivot[col] = 0
 
-gb_nat = []
-for adv in gb_adv["강북권 광고주"].dropna():
-    sub = region_df[
-        (region_df["권역"] == "강북권") &
-        (region_df["광고주(연락처)"].astype(str) == str(adv))
-    ]
-    has_foreign = (
-        sub["해외본사"].notna().any()
-        and (sub["해외본사"].astype(str).str.strip() != "").any()
-    )
-    gb_nat.append("해외" if has_foreign else "국내")
-gb_adv["강북권 국적"] = gb_nat + [""] * (len(gb_adv) - len(gb_nat))
+adv_pivot["총 건수"] = adv_pivot["강남권"] + adv_pivot["강북권"]
+adv_pivot["강남권 비중(%)"] = (adv_pivot["강남권"] / adv_pivot["총 건수"].replace(0, 1) * 100).round(1)
+adv_pivot["강북권 비중(%)"] = (adv_pivot["강북권"] / adv_pivot["총 건수"].replace(0, 1) * 100).round(1)
 
-max_len_adv = max(len(gn_adv), len(gb_adv))
-gn_adv = gn_adv.reindex(range(max_len_adv))
-gb_adv = gb_adv.reindex(range(max_len_adv))
+# 국적 계산
+nat_series = (
+    region_df
+    .groupby("광고주(연락처)")["해외본사"]
+    .apply(lambda s: "해외" if (s.notna() & (s.astype(str).str.strip() != "")).any() else "국내")
+    .reset_index()
+    .rename(columns={"해외본사": "국적"})
+)
 
-adv_table = pd.DataFrame({
-    "순위": list(range(1, max_len_adv + 1)),
-    "강남권 광고주": gn_adv["강남권 광고주"],
-    "강남권 건수": gn_adv["강남권 건수"],
-    "강남권 국적": gn_adv["강남권 국적"],
-    "강북권 광고주": gb_adv["강북권 광고주"],
-    "강북권 건수": gb_adv["강북권 건수"],
-    "강북권 국적": gb_adv["강북권 국적"],
+adv_pivot = adv_pivot.merge(nat_series, on="광고주(연락처)", how="left")
+
+# ▶ 강남 기준 정렬
+gn_adv_sorted = (
+    adv_pivot
+    .sort_values("강남권 비중(%)", ascending=False)
+    .reset_index()
+)
+gn_adv_sorted.insert(0, "강남 순위", range(1, len(gn_adv_sorted) + 1))
+
+# ▶ 강북 기준 정렬
+gb_adv_sorted = (
+    adv_pivot
+    .sort_values("강북권 비중(%)", ascending=False)
+    .reset_index()
+)
+gb_adv_sorted.insert(0, "강북 순위", range(1, len(gb_adv_sorted) + 1))
+
+max_len_adv = max(len(gn_adv_sorted), len(gb_adv_sorted))
+gn_adv_sorted = gn_adv_sorted.reindex(range(max_len_adv))
+gb_adv_sorted = gb_adv_sorted.reindex(range(max_len_adv))
+
+adv_table_dual = pd.DataFrame({
+    "강남 순위": gn_adv_sorted["강남 순위"],
+    "강남 광고주": gn_adv_sorted["광고주(연락처)"],
+    "강남 건수": gn_adv_sorted["강남권"],
+    "강남 비중(%)": gn_adv_sorted["강남권 비중(%)"],
+    "강남 국적": gn_adv_sorted["국적"],
+    "강북 순위": gb_adv_sorted["강북 순위"],
+    "강북 광고주": gb_adv_sorted["광고주(연락처)"],
+    "강북 건수": gb_adv_sorted["강북권"],
+    "강북 비중(%)": gb_adv_sorted["강북권 비중(%)"],
+    "강북 국적": gb_adv_sorted["국적"],
 })
 
-st.markdown("### 🔴 광고주 TOP20 비교" + title_suffix)
-st.dataframe(adv_table, use_container_width=True)
+st.markdown("### 🔴 광고주 분포 (강남/강북 비중 기준 정렬)" + title_suffix)
+st.dataframe(adv_table_dual, use_container_width=True)
 
 # ✅ 구글시트 링크
 st.markdown("""
