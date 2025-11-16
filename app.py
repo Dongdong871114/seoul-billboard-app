@@ -168,7 +168,7 @@ with st.expander("강남권 / 강북권 전광판 목록 보기", expanded=True)
     st.markdown("- " + "\n- ".join(gangbuk_buildings))
 
 ###############################################################################
-# ✅ 기존 필터 기능 (그대로 유지)
+# ✅ 필터 기능
 ###############################################################################
 filter_columns = [
     "조사월",
@@ -204,7 +204,7 @@ st.download_button(
 )
 
 ###############################################################################
-# ✅ 기존 통계 기능 (그대로 유지)
+# ✅ 기본 통계 기능
 ###############################################################################
 st.markdown("### 📈 월별 광고주별 광고 수")
 month_options = sorted(data["조사월"].astype(str).unique())
@@ -243,14 +243,15 @@ st.dataframe(
 )
 
 ###############################################################################
-# 🟦 신규 기능 1: K-VISION & KT스퀘어 단독 광고 분석 (룩스X, 공익 제외)
+# 🟦 신규 기능 1: K-VISION & KT스퀘어 단독 광고 분석 (룩스 제외 · 공익 제외)
 ###############################################################################
 st.markdown("## 🟦 K-VISION & KT스퀘어 단독 광고 분석 (룩스 제외 · 공익 제외)")
 st.write(
     "선택한 조사월 범위에서 **공익 광고를 제외하고**, "
-    "코리아나호텔(K-VISION)과 KT스퀘어 전광판에만 등장하며 "
-    "룩스에는 등장하지 않은 광고주를 표로 나열합니다. "
-    "추가로, 해당 광고주가 과거 **일민미술관**에 광고한 적이 있다면 그 조사월을 표시합니다."
+    "**코리아나호텔(K-VISION)**과 **KT스퀘어** 전광판에만 등장하며 "
+    "**룩스에는 등장하지 않은 광고주**를 표로 나열합니다. "
+    "추가로, 해당 광고주가 과거 **일민미술관**에 광고한 적이 있다면 그 조사월을 표시하고, "
+    "해당 광고가 **K-VISION인지 / KT스퀘어인지 / 둘 다인지**도 함께 보여줍니다."
 )
 
 multi_months = st.multiselect(
@@ -273,8 +274,10 @@ if multi_months:
     kvkt_adv = kvkt["광고주(연락처)"].astype(str)
     lux_adv = lux["광고주(연락처)"].astype(str).unique()
 
+    # 룩스에 없는 광고주만 필터
     unique_kvkt = kvkt[~kvkt_adv.isin(lux_adv)].copy()
 
+    # 광고주 단위로 기본 정보 집계
     grouped = (
         unique_kvkt
         .groupby("광고주(연락처)")
@@ -285,6 +288,30 @@ if multi_months:
         .reset_index()
     )
 
+    # 🔹 (1) 전광판 종류(K-VISION / KT스퀘어 / 둘 다) 계산
+    boards_per_adv = (
+        unique_kvkt
+        .groupby("광고주(연락처)")["빌딩&전광판"]
+        .unique()
+        .reset_index()
+    )
+
+    def label_board(arr):
+        s = set(arr)
+        has_kv = "코리아나호텔(K-VISION)" in s
+        has_kt = "KT스퀘어" in s
+        if has_kv and has_kt:
+            return "K-VISION & KT스퀘어"
+        elif has_kv:
+            return "K-VISION"
+        elif has_kt:
+            return "KT스퀘어"
+        return ""
+
+    boards_per_adv["전광판 구분"] = boards_per_adv["빌딩&전광판"].apply(label_board)
+    boards_per_adv = boards_per_adv[["광고주(연락처)", "전광판 구분"]]
+
+    # 🔹 (2) 국적 & 일민미술관 광고월 계산
     ilmin_rows = []
     for idx, row in grouped.iterrows():
         adv = str(row["광고주(연락처)"])
@@ -298,24 +325,46 @@ if multi_months:
         months_ilmin = sorted(ilmin["조사월"].astype(str).unique())
         ilmin_months_str = ", ".join(months_ilmin) if months_ilmin else ""
 
-        ilmin_rows.append((nationality, ilmin_months_str))
+        ilmin_rows.append((adv, nationality, ilmin_months_str))
 
-    grouped["국적"] = [n for n, _ in ilmin_rows]
-    grouped["일민미술관 광고월"] = [m for _, m in ilmin_rows]
+    ilmin_df = pd.DataFrame(ilmin_rows, columns=["광고주(연락처)", "국적", "일민미술관 광고월"])
+
+    # 🔹 (3) 모든 정보 merge
+    grouped = grouped.merge(boards_per_adv, on="광고주(연락처)", how="left")
+    grouped = grouped.merge(ilmin_df, on="광고주(연락처)", how="left")
+
+    # 컬럼 순서 정리
+    grouped = grouped[[
+        "광고주(연락처)",
+        "제품&브랜드",
+        "해외본사",
+        "국적",
+        "전광판 구분",
+        "일민미술관 광고월",
+    ]]
 
     st.dataframe(grouped, use_container_width=True)
 else:
     st.info("분석할 조사월을 하나 이상 선택하면 K-VISION & KT스퀘어 단독 광고 목록이 표시됩니다.")
 
 ###############################################################################
-# 🟥 신규 기능 2: 강남권 vs 강북권 업종/광고주 TOP20 비교 (공익 제외)
+# 🟥 신규 기능 2: 강남권 vs 강북권 업종/광고주 TOP20 비교 (공익 제외, 월별 필터)
 ###############################################################################
 st.markdown("## 🟥 강남권 vs 강북권 비교 분석 (공익 제외)")
+
+# 🔸 월별 필터 추가 (전체 or 특정 조사월)
+region_month = st.selectbox(
+    "강남권 vs 강북권 비교에 사용할 조사월 선택",
+    ["전체"] + month_options
+)
 
 region_df = data.copy()
 region_df["권역"] = region_df.apply(classify_region, axis=1)
 region_df = region_df[region_df["권역"].isin(["강남권", "강북권"])]
 region_df = region_df[region_df["업종"].astype(str).str.strip() != "공익"]
+
+if region_month != "전체":
+    region_df = region_df[region_df["조사월"].astype(str) == region_month]
 
 # 🔹 업종 TOP20 (강남/강북)
 gn_inds = (
@@ -346,7 +395,12 @@ ind_table = pd.DataFrame({
     "강북권 건수": gb_inds["강북권 건수"],
 })
 
-st.markdown("### 🔵 업종 TOP20 비교 (강남권 전광판 기준 vs 강북권 전광판 기준)")
+if region_month == "전체":
+    title_suffix = " (전체 기간 기준)"
+else:
+    title_suffix = f" ({region_month} 기준)"
+
+st.markdown("### 🔵 업종 TOP20 비교" + title_suffix)
 st.dataframe(ind_table, use_container_width=True)
 
 # 🔹 광고주 TOP20 (강남/강북)
@@ -407,10 +461,10 @@ adv_table = pd.DataFrame({
     "강북권 국적": gb_adv["강북권 국적"],
 })
 
-st.markdown("### 🔴 광고주 TOP20 비교 (강남권 전광판 기준 vs 강북권 전광판 기준)")
+st.markdown("### 🔴 광고주 TOP20 비교" + title_suffix)
 st.dataframe(adv_table, use_container_width=True)
 
 # ✅ 구글시트 링크
 st.markdown("""
-🔗 [Google Sheet에서 직접 보기](https://docs.google.com/spreadsheets/d/1AFotC96rl9nz1m2BDgn2mGSm3Ja69-mcGWAquYvWEwE/edit)
+🔗 [Google Sheet에서 직접 보기](https://docs.google.com/spreadsheets/d/1AFotC96rl9nz1m2BDgn2mGSm3Jo69-mcGWAquYvWEwE/edit)
 """)
