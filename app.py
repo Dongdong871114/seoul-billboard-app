@@ -136,7 +136,7 @@ gangnam_buildings = [
 ]
 
 gangbuk_buildings = [
-    "신세계 스퀘어",
+    "신세계스퀘어",
     "코리아나호텔(K-VISION)",
     "KT스퀘어",
     "교원내외빌딩",
