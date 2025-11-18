@@ -531,17 +531,28 @@ st.dataframe(ind_table_dual, use_container_width=True)
 
 # -------------------------------------------------------------------------
 # 🔹 광고주별 강남/강북 건수 + 비중(%), 국적, 강남/강북 각각 비중 높은 순
+#    - 광고주(연락처)가 공란이고 해외본사에 값이 있으면 해외본사명을 광고주명으로 사용
 # -------------------------------------------------------------------------
+# 1) 광고주 표시용 컬럼 생성
+region_df["광고주_표시"] = region_df["광고주(연락처)"].astype(str).str.strip()
+hq_col = region_df["해외본사"].astype(str).str.strip()
+
+# 광고주명이 공란이고 해외본사가 있는 경우 → 해외본사명을 광고주명으로 대체
+mask_adv_blank = (region_df["광고주_표시"] == "") & (hq_col != "")
+region_df.loc[mask_adv_blank, "광고주_표시"] = hq_col
+
+# 2) 광고주_표시 기준으로 강남/강북 건수 집계
 adv_counts = (
-    region_df.groupby(["광고주(연락처)", "권역"])
+    region_df.groupby(["광고주_표시", "권역"])
     .size()
     .reset_index(name="건수")
 )
 
 adv_pivot = (
-    adv_counts.pivot(index="광고주(연락처)", columns="권역", values="건수").fillna(0)
+    adv_counts.pivot(index="광고주_표시", columns="권역", values="건수").fillna(0)
 )
 
+# 강남/강북 컬럼이 없을 수도 있으니 안전하게 보정
 for col in ["강남권", "강북권"]:
     if col not in adv_pivot.columns:
         adv_pivot[col] = 0
@@ -554,9 +565,9 @@ adv_pivot["강북권 비중(%)"] = (
     adv_pivot["강북권"] / adv_pivot["총 건수"].replace(0, 1) * 100
 ).round(1)
 
-# 국적 계산
+# 3) 국적 계산 (해외본사에 값이 하나라도 있으면 '해외', 아니면 '국내')
 nat_series = (
-    region_df.groupby("광고주(연락처)")["해외본사"]
+    region_df.groupby("광고주_표시")["해외본사"]
     .apply(
         lambda s: "해외"
         if (s.notna() & (s.astype(str).str.strip() != "")).any()
@@ -566,16 +577,16 @@ nat_series = (
     .rename(columns={"해외본사": "국적"})
 )
 
-adv_pivot = adv_pivot.merge(nat_series, on="광고주(연락처)", how="left")
+adv_pivot = adv_pivot.merge(nat_series, on="광고주_표시", how="left")
 
-# 강남 기준 정렬
+# 4) 강남 기준 정렬
 gn_adv_sorted = (
     adv_pivot.sort_values("강남권 비중(%)", ascending=False)
     .reset_index()
 )
 gn_adv_sorted.insert(0, "강남 순위", range(1, len(gn_adv_sorted) + 1))
 
-# 강북 기준 정렬
+# 5) 강북 기준 정렬
 gb_adv_sorted = (
     adv_pivot.sort_values("강북권 비중(%)", ascending=False)
     .reset_index()
@@ -586,15 +597,16 @@ max_len_adv = max(len(gn_adv_sorted), len(gb_adv_sorted))
 gn_adv_sorted = gn_adv_sorted.reindex(range(max_len_adv))
 gb_adv_sorted = gb_adv_sorted.reindex(range(max_len_adv))
 
+# 6) 최종 표 생성 (화면에는 '광고주'로 보이도록)
 adv_table_dual = pd.DataFrame(
     {
         "강남 순위": gn_adv_sorted["강남 순위"],
-        "강남 광고주": gn_adv_sorted["광고주(연락처)"],
+        "강남 광고주": gn_adv_sorted["광고주_표시"],
         "강남 건수": gn_adv_sorted["강남권"],
         "강남 비중(%)": gn_adv_sorted["강남권 비중(%)"],
         "강남 국적": gn_adv_sorted["국적"],
         "강북 순위": gb_adv_sorted["강북 순위"],
-        "강북 광고주": gb_adv_sorted["광고주(연락처)"],
+        "강북 광고주": gb_adv_sorted["광고주_표시"],
         "강북 건수": gb_adv_sorted["강북권"],
         "강북 비중(%)": gb_adv_sorted["강북권 비중(%)"],
         "강북 국적": gb_adv_sorted["국적"],
